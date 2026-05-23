@@ -213,6 +213,17 @@
             <a href="tables/ch510.md">Mapping Table</a>
         </td>
     </tr>
+    <tr>
+        <td colspan="4"></td>
+    </tr>
+    <tr>
+        <td>14364</td>
+        <td>3</td>
+        <td>SK700V MACH</td>
+        <td align="center">
+            <a href="tables/sk700v.md">Mapping Table</a>
+        </td>
+    </tr>
 </table>
 
-*Devices marked as "Not tested" might have incorrect PIDs or mapping tables.*
+*Devices marked as "Not tested" might have incorrect PIDs or mapping tables.*
