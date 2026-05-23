@@ -9,17 +9,16 @@ pub mod ld_series;
 pub mod lp_series;
 pub mod lq_series;
 pub mod ls_series;
-
+pub mod sk700v_mach;   // SK700V MACH (VID: 0x381C, PID: 0x0003)
 use crate::error;
 use std::{process::exit, time::Duration};
 use hidapi::HidDevice;
-
-pub const DEFAULT_VENDOR_ID: u16 = 13875;
-pub const CH510_VENDOR_ID: u16 = 13523;
-pub const CH510_PRODUCT_ID: u16 = 4352;
-
+pub const DEFAULT_VENDOR_ID: u16 = 13875;   // 0x3633 — DeepCool
+pub const CH510_VENDOR_ID: u16   = 13523;   // 0x34D3
+pub const CH510_PRODUCT_ID: u16  = 4352;    // 0x1100
+pub const SK700V_VENDOR_ID: u16  = 14364;   // 0x381C — SK / Shallow Cooling
+pub const SK700V_PRODUCT_ID: u16 = 3;       // 0x0003
 pub const AUTO_MODE_INTERVAL: Duration = Duration::from_millis(5000);
-
 #[derive(PartialEq)]
 pub enum Mode {
     Default,
@@ -36,7 +35,6 @@ pub enum Mode {
     Gpu,
     Psu,
 }
-
 impl Mode {
     pub const fn symbol(&self) -> &'static str {
         match self {
@@ -55,7 +53,6 @@ impl Mode {
             Mode::Psu => "psu",
         }
     }
-
     pub fn get(symbol: &str) -> Option<Mode> {
         match symbol {
             "auto" => Some(Self::Auto),
@@ -73,18 +70,15 @@ impl Mode {
             _ => None,
         }
     }
-
     pub fn support_error(&self) -> Mode {
         error!(format!("Display mode \"{}\" is not supported on your device", self.symbol()));
         exit(1);
     }
-
     pub fn support_error_secondary(&self) -> Mode {
         error!(format!("Secondary display mode \"{}\" is not supported on your device", self.symbol()));
         exit(1);
     }
 }
-
 pub fn device_error() -> HidDevice {
     error!("Failed to access the USB device");
     eprintln!("       Try to run the program as root or give permission to the neccesary resources.");

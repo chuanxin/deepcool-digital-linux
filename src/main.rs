@@ -1,66 +1,55 @@
 mod devices;
 mod monitor;
 mod utils;
-
 use colored::*;
 use devices::*;
 use hidapi::HidApi;
 use monitor::{cpu, gpu};
 use std::process::exit;
 use utils::{args::Args, status::*};
-
 /// Common warning checks for command arguments.
 mod common_warnings {
     use crate::{devices::Mode, utils::args::Args, warning};
-
     pub fn mode_change(args: &Args) {
         if args.mode != Mode::Default {
             warning!("Display mode cannot be changed, value will be ignored");
         }
     }
-
     pub fn secondary_mode(args: &Args) {
         if args.secondary != Mode::Default {
             warning!("Secondary display mode is not supported, value will be ignored");
         }
     }
-
     pub fn fahrenheit(args: &Args) {
         if args.fahrenheit {
             warning!("Displaying ˚F is not supported, value will be ignored");
         }
     }
-
     pub fn alarm(args: &Args) {
         if args.alarm {
             warning!("Alarm is not supported, value will be ignored");
         }
     }
-
     pub fn alarm_hardcoded(args: &Args) {
         if args.alarm {
             warning!("The alarm is hard-coded in your device, value will be ignored");
         }
     }
-
     pub fn rotate(args: &Args) {
         if args.rotate > 0 {
             warning!("Display rotation is not supported, value will be ignored");
         }
     }
-
     pub fn lead_zeros(args: &Args) {
         if args.lead_zeros {
             warning!("Displaying leading zeros is not supported, value will be ignored");
         }
     }
 }
-
 fn main() {
     // Read args
     let args = Args::read();
     println!("--- Deepcool Digital Linux ---");
-
     // Find dedicated or integrated GPU
     let pci_device = {
         // Get list of GPUs
@@ -93,7 +82,6 @@ fn main() {
             }
         }
     };
-
     // Display CPU and GPU name
     match cpu::get_name() {
         Some(cpu_name) => println!("CPU MON.: {}", cpu_name.bright_green()),
@@ -104,23 +92,34 @@ fn main() {
         None => println!("GPU MON.: {}", "none".bright_black()),
     };
     println!("-----");
-
-    // Find DeepCool device
+    // Find DeepCool / SK device
     let api = HidApi::new().unwrap_or_else(|err| {
         error!(err);
         exit(1);
     });
-    let mut product_id = 0;
+    let mut product_id: u16 = 0;
+    let mut vendor_id: u16 = 0;
     for device in api.device_list() {
-        if device.vendor_id() == DEFAULT_VENDOR_ID {
+        // SK700V MACH — must be checked before DEFAULT_VENDOR_ID because
+        // SK700V has product_id=3 which overlaps with AK Series (1..=4).
+        if device.vendor_id() == SK700V_VENDOR_ID && device.product_id() == SK700V_PRODUCT_ID {
             if args.pid == 0 || device.product_id() == args.pid {
                 product_id = device.product_id();
+                vendor_id  = SK700V_VENDOR_ID;
+                println!("Device found: {}", "SK700V MACH".bright_green());
+                break;
+            }
+        } else if device.vendor_id() == DEFAULT_VENDOR_ID {
+            if args.pid == 0 || device.product_id() == args.pid {
+                product_id = device.product_id();
+                vendor_id  = DEFAULT_VENDOR_ID;
                 println!("Device found: {}", device.product_string().unwrap().bright_green());
                 break;
             }
         } else if device.vendor_id() == CH510_VENDOR_ID && device.product_id() == CH510_PRODUCT_ID {
             if args.pid == 0 || device.product_id() == args.pid {
                 product_id = device.product_id();
+                vendor_id  = CH510_VENDOR_ID;
                 println!("Device found: {}", "CH510-MESH-DIGITAL".bright_green());
                 break;
             }
@@ -134,12 +133,45 @@ fn main() {
         }
         exit(1);
     }
-
     // Initialize CPU & GPU monitoring
     let cpu = cpu::Cpu::new();
     let gpu = gpu::Gpu::new(pci_device);
-
     // Connect to device and send datastream
+    // SK700V MACH is handled first because its product_id=3 would otherwise
+    // match the AK Series arm (1..=4) if vendor_id were not checked.
+    if vendor_id == SK700V_VENDOR_ID {
+        println!(
+            "Supported modes: {} [default: {}]",
+            "auto cpu_temp cpu_usage".bold(),
+            sk700v_mach::DEFAULT_MODE.symbol()
+        );
+        // Connect to device
+        let sk700v = sk700v_mach::Display::new(cpu, &args.mode, args.update, args.fahrenheit, args.alarm);
+        // Print current configuration & warnings
+        print_device_status(
+            &sk700v.mode,
+            None,
+            None,
+            None,
+            if args.fahrenheit { TemperatureUnit::Fahrenheit } else { TemperatureUnit::Celsius },
+            Alarm {
+                state: if args.alarm { AlarmState::On } else { AlarmState::Off },
+                temp_limit: if args.fahrenheit {
+                    sk700v_mach::TEMP_LIMIT_F
+                } else {
+                    sk700v_mach::TEMP_LIMIT_C
+                },
+                temp_warning: 0,
+            },
+            args.update,
+        );
+        common_warnings::secondary_mode(&args);
+        common_warnings::rotate(&args);
+        common_warnings::lead_zeros(&args);
+        // Display loop
+        sk700v.run(&api, SK700V_VENDOR_ID, SK700V_PRODUCT_ID);
+        return;
+    }
     match product_id {
         // AK Series
         1..=4 => {

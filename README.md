@@ -1,134 +1,14 @@
-# Table of Contents
-- [About](#about)
-- [Installation](#installation)
-- [Supported Devices](#supported-devices)
-    - [MYSTIQUE Series](#mystique-series)
-- [Usage](#usage)
-- [Automatic Start](#automatic-start)
-    - [Systemd](#systemd-arch-debian-ubuntu-fedora-etc)
-    - [OpenRC](#openrc-gentoo-artix-linux-etc)
-- [Building from Source](#building-from-source)
-- [Device List](#more-information)
+> **This is a fork of [Nortank12/deepcool-digital-linux](https://github.com/Nortank12/deepcool-digital-linux)**
+> with added support for the **SK700V MACH** (Vendor ID: `0x381C`).
+> The SK700V MACH uses a different USB vendor and a customized HID protocol
+> that required reverse engineering — see [Changes from Upstream](#changes-from-upstream) for details.
 
-# About
-This CLI program is meant to replicate the functionality of the original `DeepCool Digital`
-Windows program and I am gradually adding support to new devices.
+# DeepCool Digital Linux
 
-If you have a device that has not been added or tested yet, please read the notes below the
-supported devices.
-If you think you can collaborate, please write an issue so we can get in touch.
+A Linux driver for DeepCool / SK digital display devices, providing real-time
+CPU temperature, power, usage, and frequency monitoring directly on your cooler's screen.
 
-# Installation
-Simply download the latest [release](https://github.com/Nortank12/deepcool-digital-linux/releases)
-and make it executable:
-```bash
-chmod +x deepcool-digital-linux
-```
-You will need root permission to send data to the device.
-
-> [!TIP]
-> For more accurate CPU temperature monitoring, you can use the [zenpower3](https://github.com/PutinVladimir/zenpower3)
-> or [asus-ec-sensors](https://github.com/zeule/asus-ec-sensors) kernel modules on supported hardware.
-
-> [!NOTE]
-> On Intel's Arc GPUs, you have to use kernel version 6.13 or higher for proper temperature monitoring.
-
-### Rootless Mode <sup>(optional)</sup>
-If you need to run the program without root privilege, you can create a `udev` rule to access all necessary resources as a user.
-
-1. Locate your directory, it can be `/lib/udev/rules.d` or `/etc/udev/rules.d`
-```bash
-cd /lib/udev/rules.d
-```
-2. Create a new file called `99-deepcool-digital.rules`
-```bash
-sudo nano 99-deepcool-digital.rules
-```
-3. Insert the following:
-```bash
-# Intel RAPL energy usage file
-ACTION=="add", SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="/bin/chmod 444 /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj"
-
-# DeepCool HID raw devices
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3633", MODE="0666"
-
-# CH510 MESH DIGITAL
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="34d3", ATTRS{idProduct}=="1100", MODE="0666"
-```
-4. Reboot your computer
-
-<details>
-<summary><b>Steps for NixOS</b></summary>
-
-
-#### From Nixpkgs
-
-`deepcool-digital-linux` is packaged in Nixpkgs, available under `pkgs.deepcool-digital-linux`. A
-NixOS module is also available as `services.hardware.deepcool-digital-linux.enable`. In your NixOS
-configuration (for example in your `configuration.nix`), enabling the service will add the package
-to your `PATH` and start the Systemd service for the persistent daemon.
-
-```nix
-{
-  # Enable deepcool-digital-linux
-  services.hardware.deepcool-digital-linux.enable = true;
-
-  # ... rest of your configuration ...
-}
-```
-
-
-<!-- TODO: remove this once the Nixpkgs module receives an update -->
-
-You may also want to add the relevant udev rules to your configuration if your hardware requires them.
-In your configuration, you may use `services.udev.extraRules` to add any of the rules that you need.
-This is an alternative to using paths such as `udev.d` that you might be used to from FHS distributions.
-
-```nix
-{
-  # ... rest of our configuration ...
-  services.udev.extraRules = ''
-    # Intel RAPL energy usage file
-    ACTION=="add", SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="${pkgs.coreutils}/bin/chmod 444 /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj"
-
-    # DeepCool HID raw devices
-    SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3633", MODE="0666"
-
-    # CH510 MESH DIGITAL
-    SUBSYSTEM=="hidraw", ATTRS{idVendor}=="34d3", ATTRS{idProduct}=="1100", MODE="0666"
-  '';
-}
-```
-
-Once you enable the service, rebuild your configuration and reboot.
-
-#### From Nix Flake
-
-[this repository]: https://github.com/mzonski/deepcool-digital-linux/
-
-You may wish to use the Nix flake provided by [this repository] to get an up-to-date build of
-deepcool-digital-linux. While Nixpkgs might take some time to receive updates, the flake will
-always remain up to date as it will build directly from source.
-
-It is still possible to use the NixOS module provided by nixpkgs if using flake, but you
-must adjust the modules' **package** option to use the correct package. In a setup with flakes
-enabled, this would require you to pass `inputs` in `specialArgs`, and then obtain the package
-from `inputs.deepcool-digital-linux.packages` as such:
-
-```nix
-{inputs, pkgs, ...}: {
-  services.hardware.deepcool-digital-linux = {
-    enable = true;
-    package = inputs.deepcool-digital-linux.packages.${pkgs.system}.default;
-  };
-}
-```
-
-Do note that you will be building deepcool-digital-linux from the source each time the flake is
-updated, because the Nixpkgs binary cache will not be able to provide you cached binaries.
-</details>
-
-# Supported Devices
+## Supported Devices
 
 ### CPU Air Coolers
 <table>
@@ -198,6 +78,10 @@ updated, because the Nixpkgs binary cache will not be able to provide you cached
     </tr>
     <tr>
         <td>ASSASSIN IV VC VISION</td>
+        <td align="center">✅</td>
+    </tr>
+    <tr>
+        <td><b>SK700V MACH</b> 🆕</td>
         <td align="center">✅</td>
     </tr>
 </table>
@@ -319,6 +203,31 @@ Commands:
   -v, --version      Print version
 ```
 
+### SK700V MACH — Notes
+
+The SK700V MACH uses a **separate USB Vendor ID** (`0x381C`) from DeepCool devices (`0x3633`),
+so `--pid` is not required for detection. The program automatically identifies it by vendor.
+
+The SK700V MACH displays the following on its screen:
+
+| Display Field | Source | Notes |
+|---|---|---|
+| Power (W) | Intel RAPL (`energy_uj`) | EMA smoothed (α=0.4) |
+| Power bar (%) | RAPL PL2 (burst limit) | Auto-detected at startup |
+| Temperature | `coretemp` / `k10temp` | EMA smoothed (α=0.8) |
+| CPU Usage (%) | `/proc/stat` | 1-second average |
+| Frequency (MHz) | `/proc/cpuinfo` | Max core frequency |
+
+**Power bar ceiling** is automatically read from RAPL at startup:
+```
+/sys/class/powercap/intel-rapl:0/constraint_1_power_limit_uw  (PL2, preferred)
+/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw  (PL1/TDP, fallback)
+```
+A startup message shows the detected value:
+```
+[SK700V] Progress bar ceiling: 219.0 W  [Intel PL2 (burst)]
+```
+
 ### Using Multiple Devices <sup>(optional)</sup>
 If you have multiple devices connected, you can run the following
 command to detect them:
@@ -347,10 +256,10 @@ For example:
 
 # Automatic Start
 
-## Systemd (Arch, Debian, Ubuntu, Fedora, etc.)
-1. Copy the `deepcool-digital-linux` to the `/usr/sbin/` folder
+## Systemd (Arch, Debian, Ubuntu, Fedora, PVE, etc.)
+1. Copy the `deepcool-digital-linux` to the `/usr/local/bin/` folder
 ```bash
-sudo cp ./deepcool-digital-linux /usr/sbin/
+sudo cp ./target/release/deepcool-digital-linux /usr/local/bin/
 ```
 2. Create the service file in the `/etc/systemd/system/` folder
 ```bash
@@ -362,7 +271,7 @@ sudo nano /etc/systemd/system/deepcool-digital.service
 Description=DeepCool Digital
 
 [Service]
-ExecStart=/usr/sbin/deepcool-digital-linux
+ExecStart=/usr/local/bin/deepcool-digital-linux
 Restart=on-failure
 RestartSec=5s
 
@@ -373,9 +282,8 @@ WantedBy=multi-user.target
 ```
 4. Enable the service
 ```bash
-sudo systemctl enable deepcool-digital
+sudo systemctl enable --now deepcool-digital
 ```
-*Note: The program will run automatically after the next boot.*
 
 ## OpenRC (Gentoo, Artix Linux, etc.)
 1. Copy the `deepcool-digital-linux` to the `/usr/sbin/` folder
@@ -404,11 +312,8 @@ sudo chmod +x /etc/init.d/deepcool-digital
 ```bash
 sudo rc-update add deepcool-digital default
 ```
-*Note: The program will run automatically after the next boot.*
 
 # Building from Source
-For testing or customization, you can build the binary by following
-the steps below.
 
 ## Dependencies
 <details>
@@ -421,7 +326,7 @@ sudo pacman -S base-devel rustup
 </details>
 
 <details>
-<summary><b>Debian-based distributions</b></summary>
+<summary><b>Debian-based distributions (including Proxmox VE)</b></summary>
 
 1. Install the following packages
 ```bash
@@ -440,7 +345,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ## Building
 1. Clone the repository
 ```bash
-git clone https://github.com/Nortank12/deepcool-digital-linux
+git clone https://github.com/chuanxin/deepcool-digital-linux
 ```
 2. Open the folder
 ```bash
@@ -448,9 +353,54 @@ cd deepcool-digital-linux
 ```
 3. Run the build command
 ```bash
-cargo build -r
+cargo build --release
 ```
 You can find the binary inside the `./target/release` folder.
+
+# Changes from Upstream
+
+This fork adds full support for the **SK700V MACH**, which was not previously supported.
+The work is based on combining two projects:
+
+- [gdedrouas/SK700V-display](https://github.com/gdedrouas/SK700V-display) — initial SK700V reverse engineering (MIT)
+- [Nortank12/deepcool-digital-linux](https://github.com/Nortank12/deepcool-digital-linux) — base architecture (GPL v3)
+
+### Reverse-Engineered SK700V MACH HID Protocol
+
+The SK700V MACH shares a similar packet structure with the LQ/AK700 series but has key differences.
+Full details are documented in [device-list/tables/sk700v.md](device-list/tables/sk700v.md).
+
+**Summary of protocol differences vs LQ/AK700:**
+
+| Byte | LQ / AK700 | SK700V MACH |
+|:----:|-----------|------------|
+| D3 | `8` | `4` |
+| D4 | `12` | `13` |
+| D7~D8 | Power (LE U16) | **Power (BE U16)** — bug fix |
+| D9 | Temperature unit | **Power percentage** (progress bar) |
+| D10 | Temperature F32 [0] | **Temperature unit** (0=°C, 1=°F) |
+| D11~D14 | — | **Temperature F32** |
+| D18 | Checksum | **Termination = 22** |
+| Checksum | D1~D16 | **D1~D17** |
+| Termination | D18 | **D19** |
+
+### Bug Fix: Big-Endian Power Encoding
+
+The original SK700V implementations encoded power as Little-Endian in `D8~D9`,
+leaving `D7 = 0` as padding. The device firmware actually reads power as
+**Big-Endian U16 from `D7~D8`**. This caused correct display only by accident
+for power values below 256W.
+
+### New Features vs Upstream
+
+| Feature | Status |
+|---------|--------|
+| EMA smoothing for power (α=0.4) | ✅ Added |
+| EMA smoothing for temperature (α=0.8) | ✅ Added |
+| Auto-detect CPU TDP from RAPL PL2 | ✅ Added |
+| Power percentage progress bar (D9) | ✅ Added |
+| Temperature unit flag (D10) | ✅ Fixed |
+| RAPL overflow protection | ✅ Added |
 
 # More Information
 [Device List and USB Mapping Tables](device-list/README.md)
